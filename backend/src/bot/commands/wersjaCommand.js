@@ -56,7 +56,8 @@ export async function execute(interaction) {
     
     await interaction.reply({ 
       embeds: [embed],
-      components: [actionRow]
+      components: [actionRow],
+      ephemeral: true
     });
     
   } catch (error) {
