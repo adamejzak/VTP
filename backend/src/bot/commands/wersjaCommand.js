@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import logger from '../../config/logger.js';
 
 export const data = new SlashCommandBuilder()
@@ -45,7 +45,19 @@ export async function execute(interaction) {
         text: 'VTP Discord Bot'
       });
     
-    await interaction.reply({ embeds: [embed] });
+    // Add GitHub repository button
+    const githubButton = new ButtonBuilder()
+      .setLabel('🔗 Kod źródłowy')
+      .setStyle(ButtonStyle.Link)
+      .setURL('https://github.com/adamejzak/VTP');
+    
+    const actionRow = new ActionRowBuilder()
+      .addComponents(githubButton);
+    
+    await interaction.reply({ 
+      embeds: [embed],
+      components: [actionRow]
+    });
     
   } catch (error) {
     logger.error(`Wersja command error: ${error.message}`, { stack: error.stack });

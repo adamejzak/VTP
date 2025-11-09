@@ -123,6 +123,8 @@ ssl/
 *.key
 *.crt
 
+/.cursor/*
+
 
 
 
