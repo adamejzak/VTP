@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  # Backend Service (Development)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: vtp-backend-dev
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=development
+      - APP_VERSION=${APP_VERSION:-1.0.0-dev}
+      - BACKEND_VERSION=${BACKEND_VERSION:-1.0.0-dev}
+      - FRONTEND_VERSION=${FRONTEND_VERSION:-1.0.0-dev}
+    env_file:
+      - ./backend/.env.development
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - ./backend/data:/app/data
+      - ./backend/logs:/app/logs
+    networks:
+      - vtp-network
+    # Use default CMD from Dockerfile.dev (runs prisma db push + npm run dev)
+
+  # Frontend Service (Development)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: vtp-frontend-dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - APP_VERSION=${APP_VERSION:-1.0.0-dev}
+      - FRONTEND_VERSION=${FRONTEND_VERSION:-1.0.0-dev}
+    env_file:
+      - ./frontend/.env.local
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    networks:
+      - vtp-network
+    command: npm run dev
+
+networks:
+  vtp-network:
+    driver: bridge
+

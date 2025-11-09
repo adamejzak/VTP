@@ -1,0 +1,36 @@
+# Backend Dockerfile for Development
+FROM node:20-alpine
+
+# Install dependencies
+RUN apk add --no-cache libc6-compat curl
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies (including dev dependencies)
+RUN npm install
+
+# Copy source code
+COPY . .
+
+# Generate Prisma client
+RUN npx prisma generate
+
+# Create necessary directories
+RUN mkdir -p data logs
+
+EXPOSE 8080
+
+ENV PORT=8080
+ENV NODE_ENV=development
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+
+# For dev, ensure schema is applied on container start then run dev server
+CMD ["sh", "-c", "npx prisma db push && npm run dev"]
+
+

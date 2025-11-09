@@ -1,0 +1,45 @@
+{
+  "name": "vtp-backend",
+  "version": "1.0.0",
+  "description": "VTP Backend - Discord Bot and REST API with Clerk Authentication",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "cross-env NODE_ENV=development node --watch src/index.js",
+    "build": "npx prisma generate",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "startup": "node scripts/startup.js"
+  },
+  "dependencies": {
+    "@clerk/clerk-sdk-node": "^5.1.2",
+    "@prisma/client": "^6.15.0",
+    "cors": "^2.8.5",
+    "discord.js": "^14.19.3",
+    "dotenv": "^16.5.0",
+    "exceljs": "^4.4.0",
+    "express": "^4.19.2",
+    "express-session": "^1.18.1",
+    "jsonwebtoken": "^9.0.2",
+    "passport": "^0.7.0",
+    "passport-discord": "^0.1.4",
+    "prisma": "^6.15.0",
+    "sequelize": "^6.37.7",
+    "sqlite3": "^5.1.7",
+    "winston": "^3.17.0"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "api",
+    "clerk",
+    "authentication",
+    "nodejs",
+    "express"
+  ],
+  "author": "Adam Ejzak (ajzak)",
+  "license": "SEE LICENSE IN LICENSE",
+  "devDependencies": {
+    "cross-env": "^10.0.0"
+  }
+}

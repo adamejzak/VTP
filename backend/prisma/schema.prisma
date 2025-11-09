@@ -1,0 +1,115 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String       @id @default(cuid())
+  clerkId      String       @unique
+  firstName    String?
+  lastName     String?
+  role         Role         @default(EMPLOYEE)
+  discordId    String?
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  Assignments  Assignment[]
+  CreatedSchedules Schedule[] @relation("ScheduleCreator")
+  Notifications    Notification[]
+
+  @@map("Users")
+}
+
+model Store {
+  id                String      @id @default(cuid())
+  name              String
+  workingHoursPerDay String     // JSON string with day-of-week to hours mapping
+  isActive          Boolean     @default(true)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  Assignments       Assignment[]
+
+  @@map("Stores")
+}
+
+model Schedule {
+  id          Int         @id @default(autoincrement())
+  month       Int
+  year        Int
+  isReady     Boolean     @default(false) // Whether the schedule is marked as ready
+  createdBy   String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  Creator     User        @relation("ScheduleCreator", fields: [createdBy], references: [id])
+  Assignments Assignment[]
+
+  @@map("Schedules")
+}
+
+model Assignment {
+  id         String   @id @default(cuid())
+  date       DateTime
+  storeId    String
+  employeeId String
+  hours      Float
+  scheduleId Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  
+  Store      Store    @relation(fields: [storeId], references: [id])
+  Schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  Employee   User     @relation(fields: [employeeId], references: [id])
+
+  @@map("Assignments")
+}
+
+enum Role {
+  ADMIN
+  EMPLOYEE
+  NONE
+}
+
+model DickMeasurement {
+  id         Int      @id @default(autoincrement())
+  userId     String
+  size       Float
+  measuredAt DateTime @default(now())
+
+  @@map("DickMeasurements")
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Notification {
+  id        String            @id @default(cuid())
+  userId    String
+  title     String
+  message   String?
+  type      NotificationType  @default(INFO)
+  read      Boolean          @default(false)
+  actionUrl String?          // Optional URL for clicking the notification
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  
+  User      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("Notifications")
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+  TASK
+  SCHEDULE
+  MESSAGE
+}
