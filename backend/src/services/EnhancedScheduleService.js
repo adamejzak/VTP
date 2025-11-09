@@ -1051,8 +1051,9 @@ export class EnhancedScheduleService {
       shifts[assignment.employeeId][day] = storeCode;
     });
 
-    // Add header row
-    const headers = ['', ...Array.from({ length: daysInMonth }, (_, i) => (i + 1).toString())];
+    const monthName = new Date(schedule.year, schedule.month).toLocaleString('pl-PL', { month: 'long' });
+    const capitalizedMonthName = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+    const headers = [`${capitalizedMonthName} ${schedule.year}`, ...Array.from({ length: daysInMonth }, (_, i) => (i + 1).toString())];
     worksheet.addRow(headers);
 
     // Add employee shift rows
@@ -1113,6 +1114,12 @@ export class EnhancedScheduleService {
           bottom: { style: 'thin' },
           right: { style: 'thin' }
         };
+
+        if (row === 1) {
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        } else if (col > 1) {
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        }
 
         if (row === 1 && col > 1) {
           const dayInfo = dayColumns[col - 2];
@@ -1865,7 +1872,7 @@ export class EnhancedScheduleService {
     }
 
     if (added.length > 0) {
-      summaryLines.push('**➕ Dodane:**');
+      summaryLines.push('**✚ Dodane:**');
       added.slice(0, 5).forEach((assignment) => {
         summaryLines.push(this.formatAddedAssignment(assignment));
       });
@@ -1887,7 +1894,7 @@ export class EnhancedScheduleService {
 
     if (removed.length > 0) {
       summaryLines.push('');
-      summaryLines.push('**➖ Usunięte:**');
+      summaryLines.push('**❌ Usunięte:**');
       removed.slice(0, 5).forEach((assignment) => {
         summaryLines.push(this.formatRemovedAssignment(assignment));
       });
@@ -1907,7 +1914,7 @@ export class EnhancedScheduleService {
     const employeeName = this.getEmployeeDisplayName(assignment);
     const storeName = this.getStoreDisplayName(assignment);
     const hours = assignment.hours ?? 0;
-    return `➕ **${dateLabel}** – **${employeeName}**: ${storeName} (${hours}h)`;
+    return `✚ **${dateLabel}** – **${employeeName}**: ${storeName} (${hours}h)`;
   }
 
   formatRemovedAssignment(assignment) {
@@ -1918,7 +1925,7 @@ export class EnhancedScheduleService {
     const employeeName = this.getEmployeeDisplayName(assignment);
     const storeName = this.getStoreDisplayName(assignment);
     const hours = assignment.hours ?? 0;
-    return `➖ **${dateLabel}** – **${employeeName}**: ${storeName} (${hours}h)`;
+    return `❌ **${dateLabel}** – **${employeeName}**: ${storeName} (${hours}h)`;
   }
 
   formatUpdatedAssignment(previousAssignment, nextAssignment) {
