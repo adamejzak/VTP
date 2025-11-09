@@ -42,7 +42,7 @@ export async function execute(interaction) {
       )
       .setTimestamp()
       .setFooter({
-        text: 'VTP Discord Bot'
+        text: 'VTP App - by ajzak'
       });
     
     // Add GitHub repository button
