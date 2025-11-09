@@ -32,7 +32,8 @@ export class CommandHandler {
         import('./commands/rockPaperScissorsUserContextCommand.js'),
         import('./commands/ticTacToeCommand.js'),
         import('./commands/ticTacToeUserContextCommand.js'),
-        import('./commands/wersjaCommand.js')
+        import('./commands/wersjaCommand.js'),
+        import('./commands/kodCommand.js')
       ]);
 
       // Register each command

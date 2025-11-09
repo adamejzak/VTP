@@ -5,6 +5,7 @@
 
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import logger from '../../config/logger.js';
+import { config } from '../../config/index.js';
 import { rpsState } from '../../utils/rpsState.js';
 import { ticTacToeState } from '../../utils/ticTacToeState.js';
 import { buildScheduleMenu, buildScheduleDetail } from '../utils/scheduleUi.js';
@@ -19,6 +20,8 @@ export async function execute(interaction, services) {
   try {
     if (interaction.isButton()) {
       await handleButtonInteraction(interaction, services);
+    } else if (interaction.isModalSubmit()) {
+      await handleModalInteraction(interaction, services);
     } else if (interaction.isChatInputCommand() || interaction.isContextMenuCommand()) {
       await services.commandHandler.handle(interaction);
     }
@@ -471,4 +474,84 @@ function getChoiceEmoji(choice) {
     'nozyce': '✂️ Nożyce'
   };
   return emojis[choice] || choice;
+}
+
+/**
+ * Handles modal interactions
+ * @param {ModalSubmitInteraction} interaction - Modal interaction
+ * @param {Object} services - Services object
+ */
+async function handleModalInteraction(interaction, services) {
+  const customId = interaction.customId;
+
+  if (customId === 'barcode_modal') {
+    await handleBarcodeModal(interaction, services);
+  }
+}
+
+/**
+ * Handles barcode modal submission
+ * @param {ModalSubmitInteraction} interaction - Modal interaction
+ * @param {Object} services - Services object
+ */
+async function handleBarcodeModal(interaction, services) {
+  try {
+    const productName = interaction.fields.getTextInputValue('product_name');
+    const barcode = interaction.fields.getTextInputValue('barcode');
+    const user = interaction.user;
+
+    // Get channel ID from config
+    const channelId = config.discord.barcodeChannel;
+
+    if (!channelId) {
+      logger.error('DISCORD_BARCODE_CHANNEL is not set in environment variables');
+      return interaction.reply({
+        content: 'Błąd konfiguracji: kanał dla kodów kreskowych nie jest skonfigurowany.',
+        ephemeral: true
+      });
+    }
+
+    // Get the channel
+    const channel = await interaction.client.channels.fetch(channelId);
+    if (!channel) {
+      logger.error(`Channel ${channelId} not found`);
+      return interaction.reply({
+        content: 'Nie znaleziono kanału dla kodów kreskowych.',
+        ephemeral: true
+      });
+    }
+
+    // Format message: nazwa produktu - `kod kreskowy`
+    const message = `${productName} - \`${barcode}\``;
+
+    // Create embed with user info
+    const embed = new EmbedBuilder()
+      .setDescription(message)
+      .setAuthor({
+        name: user.tag,
+        iconURL: user.displayAvatarURL() || user.defaultAvatarURL
+      })
+      .setTimestamp()
+      .setColor('#0099ff');
+
+    // Send message to channel
+    await channel.send({ embeds: [embed] });
+
+    // Reply to user
+    await interaction.reply({
+      content: `Kod kreskowy został wysłany na kanał <#${channelId}>`,
+      ephemeral: true
+    });
+
+    logger.info(`Barcode submitted by ${user.tag} (${user.id}): ${productName} - ${barcode}`);
+  } catch (error) {
+    logger.error(`Barcode modal error: ${error.message}`, { stack: error.stack });
+    
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: 'Wystąpił błąd podczas przetwarzania kodu kreskowego.',
+        ephemeral: true
+      }).catch(err => logger.error(`Failed to send error reply: ${err.message}`));
+    }
+  }
 }

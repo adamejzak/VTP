@@ -30,6 +30,7 @@ export const config = {
     botToken: process.env.DISCORD_BOT_TOKEN,
     clientId: process.env.DISCORD_CLIENT_ID,
     clientSecret: process.env.DISCORD_CLIENT_SECRET,
+    barcodeChannel: process.env.DISCORD_BARCODE_CHANNEL,
     maxListeners: 15
   },
   
