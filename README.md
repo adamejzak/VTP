@@ -123,7 +123,7 @@ npm run dev
 # -> API: http://localhost:8080
 ```
 
-Rejestracja/aktualizacja komend Discord (po ustawieniu DISCORD_*):
+Rejestracja/aktualizacja komend Discord (mozna zmieniac z ktorego .env bierze discord id):
 ```bash
 node backend/deploy-discord-commands.js
 ```
@@ -203,9 +203,6 @@ Zasady w skrócie:
 ---
 
 ### 📄 Licencja / License
-Ten projekt jest udostępniany na warunkach Non-Commercial License (NCL).  
-Dozwolone: użytek własny, edukacyjny i prezentacja w portfolio z atrybucją.  
-Zabronione: jakiekolwiek użycie komercyjne, redystrybucja, sublicencjonowanie i włączanie do innych projektów bez pisemnej zgody.  
 Szczegóły i pełna treść: patrz plik `LICENSE`.  
 © 2025 Adam Ejzak (ajzak).
 

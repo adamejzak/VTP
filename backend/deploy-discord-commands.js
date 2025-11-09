@@ -8,12 +8,13 @@ import { config as loadEnv } from 'dotenv';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Load default .env in current working directory first (if present)
 const defaultEnvResult = loadEnv();
 if (defaultEnvResult?.parsed) {
   logger.info('Wczytano zmienne środowiskowe z domyślnego pliku .env (bieżący katalog).');
 }
 
+
+// there change .env file to config with bot token and client id to deploy commands
 const envCandidates = [
   './.env.development',
 ];
