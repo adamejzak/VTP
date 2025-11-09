@@ -2365,9 +2365,14 @@ export default function SchedulePage() {
               />
             </div>
             <div>
-              <Label htmlFor="employee">Pracownik</Label>
+              <label
+                id="add-assignment-employee-label"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              >
+                Pracownik
+              </label>
               <Select value={selectedEmployee} onValueChange={setSelectedEmployee}>
-                <SelectTrigger>
+                <SelectTrigger aria-labelledby="add-assignment-employee-label">
                   <SelectValue placeholder="Wybierz pracownika" />
                 </SelectTrigger>
                 <SelectContent>
@@ -2382,9 +2387,14 @@ export default function SchedulePage() {
               </Select>
             </div>
             <div>
-              <Label htmlFor="store">Sklep</Label>
+              <label
+                id="add-assignment-store-label"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              >
+                Sklep
+              </label>
               <Select value={selectedStore} onValueChange={setSelectedStore}>
-                <SelectTrigger>
+                <SelectTrigger aria-labelledby="add-assignment-store-label">
                   <SelectValue placeholder="Wybierz sklep" />
                 </SelectTrigger>
                 <SelectContent>
@@ -2445,9 +2455,14 @@ export default function SchedulePage() {
               </div>
             </div>
             <div>
-              <Label htmlFor="rangeEmployee">Pracownik</Label>
+              <label
+                id="range-assignment-employee-label"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              >
+                Pracownik
+              </label>
               <Select value={rangeEmployee} onValueChange={setRangeEmployee}>
-                <SelectTrigger>
+                <SelectTrigger aria-labelledby="range-assignment-employee-label">
                   <SelectValue placeholder="Wybierz pracownika" />
                 </SelectTrigger>
                 <SelectContent>
@@ -2462,9 +2477,14 @@ export default function SchedulePage() {
               </Select>
             </div>
             <div>
-              <Label htmlFor="rangeStore">Sklep</Label>
+              <label
+                id="range-assignment-store-label"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              >
+                Sklep
+              </label>
               <Select value={rangeStore} onValueChange={setRangeStore}>
-                <SelectTrigger>
+                <SelectTrigger aria-labelledby="range-assignment-store-label">
                   <SelectValue placeholder="Wybierz sklep" />
                 </SelectTrigger>
                 <SelectContent>
@@ -2565,9 +2585,14 @@ export default function SchedulePage() {
               />
             </div>
             <div>
-              <Label htmlFor="editEmployee">Pracownik</Label>
+              <label
+                id="edit-assignment-employee-label"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              >
+                Pracownik
+              </label>
               <Select value={editingAssignment?.employeeId || 'none'} disabled>
-                <SelectTrigger>
+                <SelectTrigger aria-labelledby="edit-assignment-employee-label">
                   <SelectValue placeholder="Wybierz pracownika" />
                 </SelectTrigger>
                 <SelectContent>
@@ -2582,9 +2607,14 @@ export default function SchedulePage() {
               </Select>
             </div>
             <div>
-              <Label htmlFor="editStore">Sklep</Label>
+              <label
+                id="edit-assignment-store-label"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              >
+                Sklep
+              </label>
               <Select value={editStoreId} onValueChange={setEditStoreId}>
-                <SelectTrigger>
+                <SelectTrigger aria-labelledby="edit-assignment-store-label">
                   <SelectValue placeholder="Wybierz sklep" />
                 </SelectTrigger>
                 <SelectContent>

@@ -133,9 +133,10 @@ export class EnhancedScheduleController {
       const schedule = await this.enhancedScheduleService.getScheduleByMonth(monthNum - 1, yearNum); // Convert 1-based to 0-based
 
       if (!schedule) {
-        return res.status(404).json({
+        return res.status(200).json({
           success: false,
-          message: 'Schedule not found'
+          message: 'Schedule not found',
+          data: null
         });
       }
 
