@@ -56,7 +56,7 @@ export async function startRockPaperScissorsGame(interaction, challenger, oppone
     .setTitle('Papier-Kamień-Nożyce')
     .setDescription(
       `Wyzwanie: <@${challenger.id}> vs <@${opponent.id}>\n` +
-      `Status: czekam na ruchy\n` +
+      `⏳ Czekam na: <@${challenger.id}> i <@${opponent.id}>\n` +
       `Wybierz swój ruch klikając przycisk.`
     )
     .setTimestamp();

@@ -94,6 +94,33 @@ async function handleRPSButton(interaction) {
   const updatedGame = rpsState.getState(gameId);
   if (updatedGame.status === 'completed') {
     await finishRPSGame(interaction, gameId, updatedGame);
+  } else {
+    // Update embed to show who is still waiting
+    const waitingFor = [];
+    if (!updatedGame.user1Choice) {
+      waitingFor.push(`<@${updatedGame.user1}>`);
+    }
+    if (!updatedGame.user2Choice) {
+      waitingFor.push(`<@${updatedGame.user2}>`);
+    }
+
+    const embed = new EmbedBuilder()
+      .setColor('#5865F2')
+      .setTitle('Papier-Kamień-Nożyce')
+      .setDescription(
+        `Wyzwanie: <@${updatedGame.user1}> vs <@${updatedGame.user2}>\n` +
+        `⏳ Czekam na: ${waitingFor.join(' i ')}\n` +
+        `Wybierz swój ruch klikając przycisk.`
+      )
+      .setTimestamp();
+
+    try {
+      await interaction.message.edit({
+        embeds: [embed]
+      });
+    } catch (error) {
+      logger.error(`Failed to update RPS game message: ${error.message}`);
+    }
   }
 }
 
