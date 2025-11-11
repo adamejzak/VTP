@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo, useRef } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { motion } from "framer-motion"
 import { 
   Calendar, 
@@ -18,7 +18,8 @@ import {
   Table,
   Check,
   X,
-  MoreVertical
+  MoreVertical,
+  Loader2
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -102,6 +103,32 @@ interface PendingAssignmentChange {
   requestId: number
 }
 
+interface BulkAssignmentChange {
+  action: PendingAssignmentAction
+  employeeId: string
+  day: number
+  dateKey: string
+  storeId: string
+  storeName: string
+  hours: number
+  assignmentId?: string
+  previousAssignment?: {
+    storeId: string
+    storeName: string
+    hours: number
+    assignmentId?: string
+  }
+}
+
+const buildAssignmentKey = (employeeId: string, dateKey: string) => `${employeeId}-${dateKey}`
+
+type FetchScheduleOptions = {
+  silent?: boolean
+  token?: string
+  month?: number
+  year?: number
+}
+
 const dayNames = ['Niedziela', 'Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota']
 const monthNames = [
   'Styczeń', 'Luty', 'Marzec', 'Kwiecień', 'Maj', 'Czerwiec',
@@ -160,6 +187,9 @@ export default function SchedulePage() {
   const [notificationSent, setNotificationSent] = useState<boolean>(false)
   const [sendingNotification, setSendingNotification] = useState<boolean>(false)
   const [pendingAssignmentChanges, setPendingAssignmentChanges] = useState<Record<string, PendingAssignmentChange>>({})
+  const [isBulkEditMode, setIsBulkEditMode] = useState(false)
+  const [bulkAssignmentChanges, setBulkAssignmentChanges] = useState<Record<string, BulkAssignmentChange>>({})
+  const [isSavingBulkChanges, setIsSavingBulkChanges] = useState(false)
   const assignmentRequestControllersRef = useRef<Record<string, AbortController>>({})
   const assignmentRequestIdsRef = useRef<Record<string, number>>({})
   const { toast } = useToast()
@@ -174,12 +204,10 @@ export default function SchedulePage() {
     const firstDay = new Date(currentYear, currentMonth, 1).getDay()
     const days = []
 
-    // Add empty cells for days before the first day of the month
     for (let i = 0; i < firstDay; i++) {
       days.push(null)
     }
 
-    // Add days of the month
     for (let day = 1; day <= daysInMonth; day++) {
       days.push(day)
     }
@@ -193,27 +221,56 @@ export default function SchedulePage() {
     [daysInCurrentMonth]
   )
   const assignmentsByDate = schedule?.assignmentsByDate ?? {}
+  const assignmentByKey = useMemo(() => {
+    if (!schedule?.Assignments) {
+      return {}
+    }
+
+    return schedule.Assignments.reduce<Record<string, Assignment>>((acc, assignment) => {
+      const dateKey = new Date(assignment.date).toISOString().split('T')[0]
+      const key = buildAssignmentKey(assignment.employeeId, dateKey)
+      acc[key] = assignment
+      return acc
+    }, {})
+  }, [schedule?.Assignments])
   const storesById = useMemo(() => {
     return stores.reduce<Record<string, Store>>((acc, store) => {
       acc[store.id] = store
       return acc
     }, {})
   }, [stores])
+  const employeesById = useMemo(() => {
+    return employees.reduce<Record<string, Employee>>((acc, employee) => {
+      acc[employee.id] = employee
+      return acc
+    }, {})
+  }, [employees])
+  const bulkChangesCount = useMemo(
+    () => Object.keys(bulkAssignmentChanges).length,
+    [bulkAssignmentChanges]
+  )
 
-  useEffect(() => {
-    fetchSchedule()
-    fetchStores()
-    fetchEmployees()
-  }, [currentMonth, currentYear])
-
-  const fetchSchedule = async (options?: { silent?: boolean }) => {
+  const fetchSchedule = useCallback(async (options?: FetchScheduleOptions) => {
     const silent = options?.silent ?? false
-    try {
+    const targetMonth = options?.month ?? currentMonth + 1
+    const targetYear = options?.year ?? currentYear
+    const token = options?.token ?? (await getToken())
+
+    if (!token) {
       if (!silent) {
-        setLoading(true)
+        setLoading(false)
       }
-      const token = await getToken()
-      const response = await fetch(`${API_URL}/api/schedules/${currentMonth + 1}/${currentYear}`, {
+      return
+    }
+
+    const shouldHandleLoadingState = !silent
+
+    if (shouldHandleLoadingState) {
+      setLoading(true)
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/schedules/${targetMonth}/${targetYear}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -221,7 +278,6 @@ export default function SchedulePage() {
       })
       
       if (response.status === 404) {
-        // Harmonogram nie istnieje - to jest normalne
         setSchedule(null)
         setNotificationSent(false)
         return
@@ -230,7 +286,7 @@ export default function SchedulePage() {
       const data = await response.json()
       if (data.success) {
         setSchedule(data.data)
-        setNotificationSent(false) // Reset notification state when schedule changes
+        setNotificationSent(false)
       } else {
         setSchedule(null)
         setNotificationSent(false)
@@ -240,86 +296,111 @@ export default function SchedulePage() {
       setSchedule(null)
       setNotificationSent(false)
     } finally {
-      if (!silent) {
+      if (shouldHandleLoadingState) {
         setLoading(false)
       }
     }
-  }
+  }, [currentMonth, currentYear, getToken])
 
-  const fetchScheduleForMonth = async (month: number, year: number) => {
-    try {
-      setLoading(true)
-      const token = await getToken()
-      const response = await fetch(`${API_URL}/api/schedules/${month}/${year}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+  const fetchScheduleForMonth = useCallback(
+    async (month: number, year: number, token?: string) => {
+      await fetchSchedule({ month, year, token })
+    },
+    [fetchSchedule]
+  )
+
+  const fetchStores = useCallback(
+    async (tokenParam?: string) => {
+      try {
+        const token = tokenParam ?? (await getToken())
+        if (!token) return
+        
+        const data = await apiClient.getStores(true, token) as { success: boolean; data: Store[] }
+        if (data.success) {
+          setStores(data.data)
         }
-      })
-      
-      if (response.status === 404) {
-        // Harmonogram nie istnieje - to jest normalne
-        setSchedule(null)
-        return
+      } catch (error) {
+        console.error('Error fetching stores:', error)
       }
-      
-      const data = await response.json()
-      if (data.success) {
-        setSchedule(data.data)
-      } else {
-        setSchedule(null)
-      }
-    } catch (error) {
-      console.error('Error fetching schedule:', error)
-      setSchedule(null)
-    } finally {
-      setLoading(false)
-    }
-  }
+    },
+    [getToken]
+  )
 
-  const fetchStores = async () => {
-    try {
-      const token = await getToken()
-      if (!token) return
-      
-      const data = await apiClient.getStores(true, token) as { success: boolean; data: Store[] }
-      if (data.success) {
-        setStores(data.data)
-      }
-    } catch (error) {
-      console.error('Error fetching stores:', error)
-    }
-  }
+  const fetchEmployees = useCallback(
+    async (tokenParam?: string) => {
+      try {
+        const token = tokenParam ?? (await getToken())
+        if (!token) return
 
-  const fetchEmployees = async () => {
-    try {
-      const token = await getToken()
-      const response = await fetch(`${API_URL}/api/auth/employees`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+        const response = await fetch(`${API_URL}/api/auth/employees`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        })
+        
+        if (!response.ok) {
+          console.error('Failed to fetch users:', response.status, response.statusText)
+          return
         }
-      })
-      
-      if (!response.ok) {
-        console.error('Failed to fetch users:', response.status, response.statusText)
-        return
-      }
-      
-      const data = await response.json()
-      
-      // Endpoint /api/auth/employees zwraca już przefiltrowanych użytkowników { users: [...] }
-      if (data.users && Array.isArray(data.users)) {
-        setEmployees(data.users)
-      } else {
-        console.error('Unexpected employees response format:', data)
+        
+        const data = await response.json()
+        
+        if (data.users && Array.isArray(data.users)) {
+          setEmployees(data.users)
+        } else {
+          console.error('Unexpected employees response format:', data)
+          setEmployees([])
+        }
+      } catch (error) {
+        console.error('Error fetching users:', error)
         setEmployees([])
       }
-    } catch (error) {
-      console.error('Error fetching users:', error)
-      setEmployees([])
+    },
+    [getToken]
+  )
+
+  useEffect(() => {
+    let isCancelled = false
+
+    const loadData = async () => {
+      const token = await getToken()
+
+      if (!token) {
+        if (!isCancelled) {
+          setLoading(false)
+        }
+        return
+      }
+
+      if (!isCancelled) {
+        setLoading(true)
+      }
+
+      try {
+        await Promise.all([
+          fetchSchedule({
+            silent: true,
+            token,
+            month: currentMonth + 1,
+            year: currentYear,
+          }),
+          fetchStores(token),
+          fetchEmployees(token),
+        ])
+      } finally {
+        if (!isCancelled) {
+          setLoading(false)
+        }
+      }
     }
-  }
+
+    void loadData()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [currentMonth, currentYear, fetchEmployees, fetchSchedule, fetchStores, getToken])
 
   const navigateMonth = (direction: 'prev' | 'next') => {
     const newDate = new Date(currentDate)
@@ -347,7 +428,6 @@ export default function SchedulePage() {
     }
 
     try {
-      // Automatycznie pobierz godziny ze sklepu
       const hours = getStoreHoursForDate(selectedStore, selectedDate)
       
       const assignments = schedule?.Assignments || []
@@ -360,7 +440,6 @@ export default function SchedulePage() {
       
 
       const token = await getToken()
-      // Zawsze używaj POST - backend sam zdecyduje czy tworzyć czy aktualizować
       const url = `${API_URL}/api/schedules`
         
       const response = await fetch(url, {
@@ -419,7 +498,6 @@ export default function SchedulePage() {
   }
 
   const openAddDialog = (day: number) => {
-    // Użyj UTC, żeby uniknąć problemów ze strefami czasowymi
     const date = new Date(Date.UTC(currentYear, currentMonth, day))
     setSelectedDate(date.toISOString().split('T')[0])
     setIsDialogOpen(true)
@@ -491,7 +569,6 @@ export default function SchedulePage() {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      // Use filename from backend response headers instead of overriding
       const contentDisposition = response.headers.get('Content-Disposition')
       if (contentDisposition) {
         const filenameMatch = contentDisposition.match(/filename="(.+)"/)
@@ -560,7 +637,6 @@ export default function SchedulePage() {
           description: `Harmonogram AI został wygenerowany (pewność: ${Math.round(result.data.confidence * 100)}%)`,
         })
         
-        // Refresh the schedule data for the generated month
         await fetchScheduleForMonth(currentMonth + 1, currentYear)
       } else {
         throw new Error(result.message || 'Failed to generate AI schedule')
@@ -615,7 +691,6 @@ export default function SchedulePage() {
           description: "Grafik został oznaczony jako gotowy i wysłano powiadomienia!",
         })
         
-        // Refresh the schedule data
         await fetchScheduleForMonth(currentMonth + 1, currentYear)
       } else {
         throw new Error(result.message || 'Failed to mark schedule as ready')
@@ -665,7 +740,6 @@ export default function SchedulePage() {
           description: "Grafik został oznaczony jako niegotowy",
         })
         
-        // Refresh the schedule data
         await fetchScheduleForMonth(currentMonth + 1, currentYear)
       } else {
         throw new Error(result.message || 'Failed to mark schedule as not ready')
@@ -867,19 +941,16 @@ export default function SchedulePage() {
       const assignments = schedule?.Assignments || []
       const newAssignments = []
 
-      // Generuj przypisania dla każdego dnia w zakresie
       for (let day = rangeStart; day <= rangeEnd; day++) {
         const date = new Date(Date.UTC(currentYear, currentMonth, day))
-        const dayOfWeek = date.getDay() // 0 = niedziela, 1 = poniedziałek, itd.
+        const dayOfWeek = date.getDay() 
         
-        // Pomijaj niedziele jeśli opcja jest włączona
         if (skipSundays && dayOfWeek === 0) {
           continue
         }
         
         const dateString = date.toISOString().split('T')[0]
         
-        // Automatycznie pobierz godziny ze sklepu dla tego dnia
         const hours = getStoreHoursForDate(rangeStore, dateString)
         
         newAssignments.push({
@@ -890,7 +961,6 @@ export default function SchedulePage() {
         })
       }
 
-      // Zawsze używaj POST - backend sam zdecyduje czy tworzyć czy aktualizować
       const url = `${API_URL}/api/schedules`
 
       const response = await fetch(url, {
@@ -956,10 +1026,8 @@ export default function SchedulePage() {
       const token = await getToken()
       if (!token) return
 
-      // Automatycznie pobierz godziny ze sklepu
       const newHours = getStoreHoursForDay(editStoreId, editingAssignment.day)
       
-      // Znajdź prawdziwe przypisanie w schedule.Assignments
       const dateKey = new Date(Date.UTC(currentYear, currentMonth, editingAssignment.day)).toISOString().split('T')[0]
       const realAssignment = schedule?.Assignments?.find(ass => {
         const assDate = new Date(ass.date).toISOString().split('T')[0]
@@ -977,7 +1045,6 @@ export default function SchedulePage() {
         return
       }
 
-      // Zaktualizuj przypisanie
       const url = `${API_URL}/api/schedules/${currentMonth + 1}/${currentYear}/assignments/${realAssignment.id}`;
       const body = JSON.stringify({
         storeId: editStoreId,
@@ -1289,10 +1356,257 @@ export default function SchedulePage() {
     })
   }
 
+  const handleBulkAssignmentDraftChange = (employeeId: string, day: number, nextStoreId: string) => {
+    const date = new Date(Date.UTC(currentYear, currentMonth, day))
+    const dateKey = date.toISOString().split('T')[0]
+    const assignmentKey = buildAssignmentKey(employeeId, dateKey)
+    const existingAssignment = assignmentByKey[assignmentKey]
+    const normalizedStoreId = nextStoreId ?? ''
+
+    setBulkAssignmentChanges(prev => {
+      const updated = { ...prev }
+
+      if (normalizedStoreId === '' || normalizedStoreId === 'none') {
+        if (!existingAssignment) {
+          delete updated[assignmentKey]
+          return updated
+        }
+
+        updated[assignmentKey] = {
+          action: 'delete',
+          employeeId,
+          day,
+          dateKey,
+          storeId: '',
+          storeName: '',
+          hours: 0,
+          assignmentId: existingAssignment.id,
+          previousAssignment: {
+            storeId: existingAssignment.storeId,
+            storeName: existingAssignment.Store?.name ?? 'Sklep',
+            hours: existingAssignment.hours,
+            assignmentId: existingAssignment.id,
+          },
+        }
+
+        return updated
+      }
+
+      const storeName = storesById[normalizedStoreId]?.name ?? 'Sklep'
+      const hours = getStoreHoursForDate(normalizedStoreId, dateKey)
+
+      if (existingAssignment) {
+        if (existingAssignment.storeId === normalizedStoreId) {
+          delete updated[assignmentKey]
+          return updated
+        }
+
+        updated[assignmentKey] = {
+          action: 'update',
+          employeeId,
+          day,
+          dateKey,
+          storeId: normalizedStoreId,
+          storeName,
+          hours,
+          assignmentId: existingAssignment.id,
+          previousAssignment: {
+            storeId: existingAssignment.storeId,
+            storeName: existingAssignment.Store?.name ?? storeName,
+            hours: existingAssignment.hours,
+            assignmentId: existingAssignment.id,
+          },
+        }
+
+        return updated
+      }
+
+      updated[assignmentKey] = {
+        action: 'create',
+        employeeId,
+        day,
+        dateKey,
+        storeId: normalizedStoreId,
+        storeName,
+        hours,
+      }
+
+      return updated
+    })
+  }
+
+  const handleStartBulkAssignmentChanges = () => {
+    Object.values(assignmentRequestControllersRef.current).forEach(controller => {
+      controller.abort()
+    })
+    assignmentRequestControllersRef.current = {}
+    assignmentRequestIdsRef.current = {}
+    setPendingAssignmentChanges({})
+    setBulkAssignmentChanges({})
+    setIsBulkEditMode(true)
+  }
+
+  const handleCancelBulkAssignmentChanges = () => {
+    setBulkAssignmentChanges({})
+    setIsBulkEditMode(false)
+  }
+
+  const handleSaveBulkAssignmentChanges = async () => {
+    const changes = Object.values(bulkAssignmentChanges)
+
+    if (changes.length === 0) {
+      toast({
+        title: "Brak zmian",
+        description: "Nie wprowadzono żadnych zmian do zapisania",
+      })
+      return
+    }
+
+    try {
+      setIsSavingBulkChanges(true)
+      const token = await getToken()
+
+      if (!token) {
+        throw new Error('Brak tokenu uwierzytelniającego')
+      }
+
+      if (!schedule && changes.some(change => change.action !== 'create')) {
+        throw new Error('Nie można zaktualizować nieistniejącego harmonogramu')
+      }
+
+      const headers: Record<string, string> = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      }
+
+      const deleteChanges = changes.filter(change => change.action === 'delete')
+      const updateChanges = changes.filter(change => change.action === 'update')
+      const createChanges = changes.filter(change => change.action === 'create')
+
+      const deleteIds = new Set(
+        deleteChanges
+          .map(change => change.assignmentId)
+          .filter((value): value is string => Boolean(value))
+      )
+      const updatesMap = new Map(
+        updateChanges
+          .filter(change => change.assignmentId)
+          .map(change => [change.assignmentId as string, change])
+      )
+
+      const finalAssignments = (schedule?.Assignments ?? [])
+        .filter(assignment => !deleteIds.has(assignment.id))
+        .map(assignment => {
+          const update = assignment.id ? updatesMap.get(assignment.id) : undefined
+          const dateKey = new Date(assignment.date).toISOString().split('T')[0]
+
+          return {
+            date: dateKey,
+            storeId: update?.storeId ?? assignment.storeId,
+            employeeId: assignment.employeeId,
+            hours: update?.hours ?? assignment.hours,
+          }
+        })
+        .concat(
+          createChanges.map(change => ({
+            date: change.dateKey,
+            storeId: change.storeId,
+            employeeId: change.employeeId,
+            hours: change.hours,
+          }))
+        )
+
+      let response: Response | null = null
+
+      if (schedule) {
+        response = await fetch(
+          `${API_URL}/api/schedules/${currentMonth + 1}/${currentYear}`,
+          {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify({
+              assignments: finalAssignments,
+            }),
+            signal: AbortSignal.timeout(30000), // 30 second timeout
+          }
+        )
+
+        if (!response.ok && response.status === 404) {
+          response = await fetch(`${API_URL}/api/schedules`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              month: currentMonth,
+              year: currentYear,
+              assignments: finalAssignments,
+            }),
+            signal: AbortSignal.timeout(30000),
+          })
+        }
+      } else {
+        response = await fetch(`${API_URL}/api/schedules`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            month: currentMonth,
+            year: currentYear,
+            assignments: finalAssignments,
+          }),
+          signal: AbortSignal.timeout(30000),
+        })
+      }
+
+      if (!response || !response.ok) {
+        const errorText = response ? await response.text() : 'Brak odpowiedzi serwera'
+        const status = response?.status ?? 0
+        throw new Error(
+          `Nie udało się zapisać zmian: ${status} ${errorText}`.trim()
+        )
+      }
+
+      try {
+        const data = await response.json()
+        if (data && data.success === false) {
+          throw new Error(data.message || 'Nie udało się zapisać zmian')
+        }
+      } catch (error) {
+        if (error instanceof Error && error.name !== 'SyntaxError') {
+          throw error
+        }
+      }
+
+      toast({
+        title: "Zapisano zmiany",
+      description: `Zapisano ${changes.length} ${changes.length === 1 ? 'zmianę' : 'zmiany'} w harmonogramie`,
+      })
+
+      setBulkAssignmentChanges({})
+      setIsBulkEditMode(false)
+      await fetchSchedule({ silent: true })
+    } catch (error) {
+      console.error('Error saving bulk assignment changes:', error)
+      toast({
+        title: "Błąd",
+        description:
+          error instanceof Error
+            ? `${error.message}. Spróbuj ponownie lub wprowadź mniej zmian jednocześnie.`
+            : "Nie udało się zapisać zmian",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSavingBulkChanges(false)
+    }
+  }
+
   const handleTableAssignmentChange = (employeeId: string, day: number, newStoreId: string) => {
+    if (isBulkEditMode) {
+      handleBulkAssignmentDraftChange(employeeId, day, newStoreId)
+      return
+    }
+
     const date = new Date(Date.UTC(currentYear, currentMonth, day))
     const dateString = date.toISOString().split('T')[0]
-    const assignmentKey = `${employeeId}-${day}`
+    const assignmentKey = buildAssignmentKey(employeeId, dateString)
 
     const existingAssignment = schedule?.Assignments?.find(ass => {
       const assDate = new Date(ass.date).toISOString().split('T')[0]
@@ -1647,10 +1961,8 @@ export default function SchedulePage() {
         return
       }
 
-      // Znajdź prawdziwe przypisanie w schedule.Assignments
       const dateKey = new Date(Date.UTC(currentYear, currentMonth, day)).toISOString().split('T')[0]
       
-      // Spróbuj znaleźć przypisanie - daty mogą być w różnych formatach
       let realAssignment = schedule?.Assignments?.find(ass => {
         const assDate = new Date(ass.date).toISOString().split('T')[0]
         return ass.employeeId === employeeId && 
@@ -1658,7 +1970,6 @@ export default function SchedulePage() {
                ass.storeId === assignment.storeId
       })
 
-      // Jeśli nie znaleziono, spróbuj tylko po storeId i date
       if (!realAssignment) {
         realAssignment = schedule?.Assignments?.find(ass => {
           const assDate = new Date(ass.date).toISOString().split('T')[0]
@@ -1717,9 +2028,13 @@ export default function SchedulePage() {
     }
   }
 
-  const filteredEmployees = selectedEmployeeIds.length === 0
-    ? employees
-    : employees.filter(emp => selectedEmployeeIds.includes(emp.id))
+  const filteredEmployees = useMemo(() => {
+    if (selectedEmployeeIds.length === 0) {
+      return employees
+    }
+
+    return employees.filter(emp => selectedEmployeeIds.includes(emp.id))
+  }, [employees, selectedEmployeeIds])
 
 
   return (
@@ -1730,8 +2045,8 @@ export default function SchedulePage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="w-full">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
+          <div className="flex-1 min-w-0">
             <div className="flex flex-col items-center gap-3 text-center sm:flex-row sm:items-center sm:gap-3 sm:text-left">
               <h1 className="text-3xl font-bold tracking-tight">Harmonogram Pracy</h1>
               <div className="flex w-full flex-wrap items-center justify-center gap-2 sm:w-auto sm:justify-start">
@@ -1795,33 +2110,13 @@ export default function SchedulePage() {
               Zarządzaj harmonogramem pracowników w sklepach
             </p>
           </div>
-          <div className="flex w-full flex-wrap justify-center gap-2 lg:w-auto lg:justify-end">
-            <div className="flex w-full border rounded-lg sm:w-auto">
-              <Button 
-                variant={viewMode === 'calendar' ? 'default' : 'ghost'} 
-                size="sm"
-                onClick={() => setViewMode('calendar')}
-                className="rounded-r-none flex-1 sm:flex-none"
-              >
-                <Calendar className="h-4 w-4 mr-2" />
-                Kalendarz
-              </Button>
-              <Button 
-                variant={viewMode === 'table' ? 'default' : 'ghost'} 
-                size="sm"
-                onClick={() => setViewMode('table')}
-                className="rounded-l-none flex-1 sm:flex-none"
-              >
-                <Table className="h-4 w-4 mr-2" />
-                Tabela
-              </Button>
-            </div>
+          <div className="flex flex-wrap justify-center gap-2 sm:flex-nowrap lg:flex-shrink-0 lg:justify-end">
             {isAdmin && (
               <>
                 <Button
                   variant="outline"
                   onClick={() => setIsRangeDialogOpen(true)}
-                  className="w-full sm:w-auto"
+                  className="whitespace-nowrap"
                 >
                   <Calendar className="h-4 w-4 mr-2" />
                   Szybkie wypełnienie
@@ -1829,7 +2124,7 @@ export default function SchedulePage() {
                 <Button
                   variant="outline"
                   onClick={() => setIsDaysOffDialogOpen(true)}
-                  className="w-full sm:w-auto"
+                  className="whitespace-nowrap"
                 >
                   <Bot className="h-4 w-4 mr-2" />
                   Generuj grafik
@@ -1841,7 +2136,7 @@ export default function SchedulePage() {
                 <Button
                   variant="outline"
                   onClick={exportSchedule}
-                  className="w-full sm:w-auto"
+                  className="whitespace-nowrap"
                 >
                   <Download className="h-4 w-4 mr-2" />
                   Eksportuj
@@ -1850,7 +2145,7 @@ export default function SchedulePage() {
                   <Button
                     variant="default"
                     onClick={markScheduleAsReady}
-                    className="w-full sm:w-auto"
+                    className="whitespace-nowrap"
                   >
                     <Check className="h-4 w-4 mr-2" />
                     Oznacz jako gotowy
@@ -1882,6 +2177,28 @@ export default function SchedulePage() {
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
+            <div className="flex w-full flex-wrap justify-center gap-2 lg:w-auto lg:justify-center">
+              <div className="flex w-full border rounded-lg sm:w-auto">
+                <Button
+                  variant={viewMode === 'calendar' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('calendar')}
+                  className="rounded-r-none flex-1 sm:flex-none"
+                >
+                  <Calendar className="h-4 w-4 mr-2" />
+                  Kalendarz
+                </Button>
+                <Button
+                  variant={viewMode === 'table' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('table')}
+                  className="rounded-l-none flex-1 sm:flex-none"
+                >
+                  <Table className="h-4 w-4 mr-2" />
+                  Tabela
+                </Button>
+              </div>
+            </div>
               <div className="flex w-full flex-wrap items-center justify-center gap-2 lg:w-auto lg:justify-end">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -1970,10 +2287,68 @@ export default function SchedulePage() {
                 </div>
               </div>
             ) : viewMode === 'table' ? (
-              // Table View
               <div className="space-y-4">
-                <div className="overflow-x-auto -mx-4 sm:mx-0">
-                  <table className="w-full min-w-[720px] border-collapse">
+                {isAdmin && (
+                  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {!isBulkEditMode ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleStartBulkAssignmentChanges}
+                        >
+                          <Edit className="h-4 w-4 mr-2" />
+                          Włącz edycję zbiorczą
+                        </Button>
+                      ) : (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleCancelBulkAssignmentChanges}
+                            disabled={isSavingBulkChanges}
+                          >
+                            <X className="h-4 w-4 mr-2" />
+                            Anuluj edycję
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={handleSaveBulkAssignmentChanges}
+                            disabled={isSavingBulkChanges || bulkChangesCount === 0}
+                          >
+                            <Check className="h-4 w-4 mr-2" />
+                            {isSavingBulkChanges ? 'Zapisywanie...' : 'Zapisz zmiany'}
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                    {isBulkEditMode && (
+                      <div className="text-sm text-muted-foreground">
+                        {bulkChangesCount > 0
+                          ? `Niezapisane zmiany: ${bulkChangesCount}`
+                          : 'Brak zmian do zapisania'}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {isBulkEditMode && (
+                  <div className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3 text-sm text-muted-foreground">
+                    Tryb edycji zbiorczej aktywny. Wprowadź zmiany w tabeli, a następnie zapisz lub anuluj.
+                  </div>
+                )}
+                <div className="relative">
+                  {isSavingBulkChanges && (
+                    <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+                      <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                    </div>
+                  )}
+                  <div
+                    className={cn(
+                      "overflow-x-auto -mx-4 sm:mx-0",
+                      isSavingBulkChanges ? "pointer-events-none opacity-50" : ""
+                    )}
+                  >
+                    <table className="w-full min-w-[720px] border-collapse">
                     <thead>
                       <tr className="border-b">
                         <th className="text-left p-2 font-medium">Pracownik</th>
@@ -2028,35 +2403,79 @@ export default function SchedulePage() {
                               : isSunday
                                 ? 'bg-red-50 dark:bg-red-900/10'
                                 : ''
-                            const assignmentKey = `${employee.id}-${day}`
+                            const assignmentKey = buildAssignmentKey(employee.id, dateString)
                             const dayAssignments = assignmentsByDate[dateString] || {}
                             const baseAssignment = dayAssignments[employee.id]
-                            const pendingChange = pendingAssignmentChanges[assignmentKey]
+                            const pendingChange = !isBulkEditMode ? pendingAssignmentChanges[assignmentKey] : undefined
                             const isPendingDelete = pendingChange?.action === 'delete'
+                            const bulkChange = isBulkEditMode ? bulkAssignmentChanges[assignmentKey] : undefined
+                            const isBulkDelete = bulkChange?.action === 'delete'
 
                             const pendingStoreName =
                               pendingChange?.storeName ||
                               (pendingChange?.storeId ? storesById[pendingChange.storeId]?.name : undefined)
+                            const bulkStoreName =
+                              bulkChange?.storeName ||
+                              (bulkChange?.storeId ? storesById[bulkChange.storeId]?.name : undefined)
 
-                            const displayAssignment = isPendingDelete
-                              ? null
-                              : pendingChange
-                                ? {
-                                    storeId: pendingChange.storeId,
-                                    storeName: pendingStoreName ?? baseAssignment?.storeName ?? 'Sklep',
-                                    hours: pendingChange.hours ?? baseAssignment?.hours ?? 0,
+                            const displayAssignment = (() => {
+                              if (isBulkEditMode) {
+                                if (isBulkDelete) {
+                                  return null
+                                }
+                                if (bulkChange) {
+                                  return {
+                                    storeId: bulkChange.storeId,
+                                    storeName: bulkStoreName ?? baseAssignment?.storeName ?? 'Sklep',
+                                    hours: bulkChange.hours ?? baseAssignment?.hours ?? 0,
                                   }
-                                : baseAssignment
+                                }
+                                return baseAssignment ?? null
+                              }
 
-                            const selectValue = displayAssignment ? displayAssignment.storeId : ''
+                              if (isPendingDelete) {
+                                return null
+                              }
+
+                              if (pendingChange) {
+                                return {
+                                  storeId: pendingChange.storeId,
+                                  storeName: pendingStoreName ?? baseAssignment?.storeName ?? 'Sklep',
+                                  hours: pendingChange.hours ?? baseAssignment?.hours ?? 0,
+                                }
+                              }
+
+                              return baseAssignment ?? null
+                            })()
+
+                            const selectValue = (() => {
+                              if (isBulkEditMode) {
+                                if (isBulkDelete) {
+                                  return 'none'
+                                }
+                                return displayAssignment?.storeId ?? ''
+                              }
+                              return displayAssignment?.storeId ?? ''
+                            })()
+
                             const selectLabel = displayAssignment
-                              ? displayAssignment.storeName || storesById[displayAssignment.storeId]?.name || 'Sklep'
-                              : 'Sklep'
+                              ? displayAssignment.storeName ||
+                                storesById[displayAssignment.storeId]?.name ||
+                                'Sklep'
+                              : isBulkDelete
+                                ? 'Do usunięcia'
+                                : 'Sklep'
+
+                            const cellClassNames = cn(
+                              "p-2 min-w-[180px] align-top",
+                              dayHighlightClass,
+                              isBulkEditMode && bulkChange ? "border border-primary/60 bg-primary/10" : ""
+                            )
 
                             return (
                               <td
                                 key={`table-cell-${employee.id}-${day}`}
-                                className={`p-2 min-w-[180px] align-top ${dayHighlightClass}`}
+                                className={cellClassNames}
                                 data-pending={pendingChange ? 'true' : 'false'}
                               >
                                 {displayAssignment ? (
@@ -2069,12 +2488,19 @@ export default function SchedulePage() {
                                             handleTableAssignmentChange(employee.id, day, nextStoreId)
                                           }
                                         }}
+                                        disabled={isBulkEditMode ? isSavingBulkChanges : false}
                                       >
                                         <SelectTrigger className="h-6 text-xs border-0 bg-transparent p-0 focus:ring-0 pl-0">
                                           <SelectValue>
-                                            <span className="font-medium">
-                                              {selectLabel}
-                                            </span>
+                                            {isBulkEditMode && isBulkDelete ? (
+                                              <span className="font-medium text-destructive">
+                                                Do usunięcia
+                                              </span>
+                                            ) : (
+                                              <span className="font-medium">
+                                                {selectLabel}
+                                              </span>
+                                            )}
                                           </SelectValue>
                                         </SelectTrigger>
                                         <SelectContent>
@@ -2104,9 +2530,18 @@ export default function SchedulePage() {
                                             handleTableAssignmentChange(employee.id, day, nextStoreId)
                                           }
                                         }}
+                                        disabled={isBulkEditMode ? isSavingBulkChanges : false}
                                       >
                                         <SelectTrigger className="h-6 text-xs border-0 bg-transparent p-0 focus:ring-0 pl-0">
-                                          <SelectValue placeholder={isPendingDelete ? "Usuwanie..." : "Dodaj"} />
+                                          <SelectValue placeholder={
+                                            isBulkEditMode
+                                              ? bulkChange?.action === 'delete'
+                                                ? 'Usunięto'
+                                                : 'Dodaj'
+                                              : isPendingDelete
+                                                ? 'Usuwanie...'
+                                                : 'Dodaj'
+                                          } />
                                         </SelectTrigger>
                                         <SelectContent>
                                           {stores.map(store => (
@@ -2119,9 +2554,22 @@ export default function SchedulePage() {
                                     </div>
                                   ) : (
                                     <div className="text-xs bg-muted/50 text-muted-foreground rounded px-2 py-1">
-                                      {isPendingDelete ? 'Usuwanie...' : 'Brak'}
+                                      {isBulkEditMode
+                                        ? isBulkDelete
+                                          ? 'Do usunięcia'
+                                          : 'Brak'
+                                        : isPendingDelete
+                                          ? 'Usuwanie...'
+                                          : 'Brak'}
                                     </div>
                                   )
+                                )}
+                                {isBulkEditMode && bulkChange && (
+                                  <div className="mt-1 text-[10px] font-medium text-primary">
+                                    {bulkChange.action === 'delete'
+                                      ? 'Zmiana oczekuje na usunięcie'
+                                      : 'Zmiana oczekuje na zapis'}
+                                  </div>
                                 )}
                               </td>
                             )
@@ -2130,6 +2578,7 @@ export default function SchedulePage() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               </div>
             ) : loading ? (
@@ -2232,7 +2681,6 @@ export default function SchedulePage() {
                                   className="text-xs bg-primary/10 rounded px-1 py-0.5 hover:bg-primary/20 transition-colors cursor-pointer group relative"
                                   onClick={(e) => {
                                     e.stopPropagation()
-                                    // TODO: Otwórz menu edycji
                                   }}
                                 >
                                   <div className="font-medium truncate">
