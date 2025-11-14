@@ -21,6 +21,8 @@ COPY . .
 
 # Production image, copy all the files and run the app
 FROM base AS runner
+ARG SPEEDTEST_VERSION=1.2.0
+ARG SPEEDTEST_URI_BASE="https://install.speedtest.net/app/cli"
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -29,8 +31,20 @@ ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nodejs
 
-# System deps required by Prisma engines
-RUN apk add --no-cache openssl libc6-compat curl
+# System deps required by Prisma engines + Speedtest CLI
+RUN set -eux; \
+  apk add --no-cache openssl libc6-compat curl; \
+  arch="$(apk --print-arch)"; \
+  case "$arch" in \
+    x86_64) speedtest_pkg="ookla-speedtest-${SPEEDTEST_VERSION}-linux-x86_64.tgz" ;; \
+    aarch64) speedtest_pkg="ookla-speedtest-${SPEEDTEST_VERSION}-linux-aarch64.tgz" ;; \
+    *) echo "Unsupported arch for Speedtest CLI: ${arch}" >&2; exit 1 ;; \
+  esac; \
+  curl -fsSL "${SPEEDTEST_URI_BASE}/${speedtest_pkg}" -o /tmp/speedtest.tgz; \
+  tar -xzf /tmp/speedtest.tgz -C /tmp; \
+  install -m 755 /tmp/speedtest /usr/local/bin/speedtest; \
+  rm -f /tmp/speedtest.tgz /tmp/speedtest.md; \
+  speedtest --version
 
 # Copy built application
 COPY --from=deps /app/node_modules ./node_modules

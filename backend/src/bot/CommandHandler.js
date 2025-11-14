@@ -33,7 +33,9 @@ export class CommandHandler {
         import('./commands/ticTacToeCommand.js'),
         import('./commands/ticTacToeUserContextCommand.js'),
         import('./commands/wersjaCommand.js'),
-        import('./commands/kodCommand.js')
+        import('./commands/kodCommand.js'),
+        import('./commands/pingCommand.js'),
+        import('./commands/speedtestCommand.js')
       ]);
 
       // Register each command
