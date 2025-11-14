@@ -1,6 +1,30 @@
 import { SlashCommandBuilder } from 'discord.js';
 import logger from '../../config/logger.js';
 
+const sizeRanges = [
+  { min: 4, max: 8, weight: 0.2 },
+  { min: 8, max: 15, weight: 0.35 },
+  { min: 15, max: 21, weight: 0.45 }
+];
+
+function weightedRandomSize(ranges) {
+  const totalWeight = ranges.reduce((sum, range) => sum + range.weight, 0);
+  let pick = Math.random() * totalWeight;
+
+  for (const range of ranges) {
+    pick -= range.weight;
+    if (pick <= 0) {
+      const value = Math.random() * (range.max - range.min) + range.min;
+      return parseFloat(value.toFixed(1));
+    }
+  }
+
+  const fallback = ranges[ranges.length - 1];
+  const fallbackValue =
+    Math.random() * (fallback.max - fallback.min) + fallback.min;
+  return parseFloat(fallbackValue.toFixed(1));
+}
+
 export const data = new SlashCommandBuilder()
   .setName('dick')
   .setDescription('Zmierz rozmiar swojego penisa');
@@ -10,9 +34,8 @@ export async function execute(interaction, { prisma }) {
   
   logger.info(`Dick command executed by user ${user.id} (${user.tag})`);
   
-  const size = parseFloat((Math.random() * (21 - 4) + 4).toFixed(1));
+  const size = weightedRandomSize(sizeRanges);
   
-  // Store measurement in database
   try {
     logger.info(`Attempting to store dick measurement for user ${user.id} with size ${size}`);
     
@@ -29,7 +52,6 @@ export async function execute(interaction, { prisma }) {
     logger.error(`Failed to store dick measurement: ${error.message}`, { stack: error.stack });
   }
   
-  // Create response
   const responses = [
     `🍆 Twój penis ma **${size} cm**!`,
   ];
